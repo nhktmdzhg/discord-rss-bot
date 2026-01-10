@@ -1,0 +1,5 @@
+.env
+config.json
+rss-cache.json
+node_modules/
+dist/
