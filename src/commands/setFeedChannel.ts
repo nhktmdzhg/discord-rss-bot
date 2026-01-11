@@ -3,6 +3,7 @@ import {
   ChatInputCommandInteraction,
   PermissionFlagsBits,
   ChannelType,
+  MessageFlags,
 } from 'discord.js';
 import { loadConfig, saveConfig } from '../utils/rssWatcher';
 
@@ -21,11 +22,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const channel = interaction.options.getChannel('channel', true);
 
-  // Channel đã được filter bởi addChannelTypes, nên chỉ cần check null
   if (!channel) {
     return interaction.reply({
       content: '❌ Không tìm thấy kênh!',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -35,6 +35,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   return interaction.reply({
     content: `✅ Đã thiết lập kênh RSS feed: <#${channel.id}>`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }

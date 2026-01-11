@@ -2,10 +2,11 @@ export interface RSSItem {
   title: string;
   link: string;
   contentSnippet?: string;
+  pubDate?: string;
 }
 
 export interface CacheData {
-  [feedUrl: string]: RSSItem[];
+  [feedUrl: string]: string;
 }
 
 export interface BotConfig {

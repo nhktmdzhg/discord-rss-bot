@@ -6,30 +6,47 @@ import { Client, TextChannel, EmbedBuilder, ChannelType } from 'discord.js';
 import { RSSItem, CacheData, BotConfig } from '../types/config';
 
 const parser = new Parser();
-let seenItems: CacheData = {};
+
+let lastSentTimestamps: CacheData = {};
+
 const CACHE_FILE = './rss-cache.json';
 const CONFIG_FILE = './config.json';
-const MAX_ITEMS_PER_FEED = 10;
 const INITIAL_ITEMS_TO_SEND = 3;
 let cronJob: ScheduledTask | null = null;
 
+// Load config
 export function loadConfig(): BotConfig {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const data = fs.readFileSync(CONFIG_FILE, 'utf8');
+
+      if (!data || data.trim().length === 0) {
+        console.log('⚠️  Config file rỗng, tạo config mặc định');
+        const defaultConfig = {
+          feedChannelId: null,
+          rssFeeds: [],
+          checkIntervalMinutes: 10,
+        };
+        saveConfig(defaultConfig);
+        return defaultConfig;
+      }
+
       return JSON.parse(data);
     }
   } catch (error) {
     console.error('Lỗi khi đọc config:', (error as Error).message);
   }
 
-  return {
+  const defaultConfig = {
     feedChannelId: null,
     rssFeeds: [],
     checkIntervalMinutes: 10,
   };
+  saveConfig(defaultConfig);
+  return defaultConfig;
 }
 
+// Save config
 export function saveConfig(config: BotConfig): void {
   try {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
@@ -39,54 +56,83 @@ export function saveConfig(config: BotConfig): void {
   }
 }
 
+// ✅ Load cache
 function loadCache(): void {
   try {
     if (fs.existsSync(CACHE_FILE)) {
       const data = fs.readFileSync(CACHE_FILE, 'utf8');
-      seenItems = JSON.parse(data);
-      const totalItems = Object.values(seenItems).reduce(
-        (sum, items) => sum + items.length,
-        0
-      );
+
+      if (!data || data.trim().length === 0) {
+        lastSentTimestamps = {};
+        return;
+      }
+
+      lastSentTimestamps = JSON.parse(data);
       console.log(
-        `✓ Đã load cache: ${
-          Object.keys(seenItems).length
-        } nguồn, ${totalItems} bài`
+        `✓ Đã load cache: ${Object.keys(lastSentTimestamps).length} nguồn`
       );
     }
   } catch (error) {
     console.error('Lỗi khi đọc cache:', (error as Error).message);
-    seenItems = {};
+    lastSentTimestamps = {};
   }
 }
 
+// ✅ Save cache
 function saveCache(): void {
   try {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(seenItems, null, 2), 'utf8');
+    fs.writeFileSync(
+      CACHE_FILE,
+      JSON.stringify(lastSentTimestamps, null, 2),
+      'utf8'
+    );
   } catch (error) {
     console.error('Lỗi khi lưu cache:', (error as Error).message);
   }
 }
 
-function addToCache(feedUrl: string, item: RSSItem): void {
-  if (!seenItems[feedUrl]) {
-    seenItems[feedUrl] = [];
-  }
-
-  seenItems[feedUrl].unshift(item);
-
-  if (seenItems[feedUrl].length > MAX_ITEMS_PER_FEED) {
-    seenItems[feedUrl] = seenItems[feedUrl].slice(0, MAX_ITEMS_PER_FEED);
+// ✅ Update timestamp bài mới nhất cho feed
+function updateLastSentTimestamp(feedUrl: string, timestamp: string): void {
+  // Chỉ update nếu timestamp mới hơn
+  if (
+    !lastSentTimestamps[feedUrl] ||
+    new Date(timestamp) > new Date(lastSentTimestamps[feedUrl])
+  ) {
+    lastSentTimestamps[feedUrl] = timestamp;
   }
 }
 
-function isItemSeen(feedUrl: string, link: string): boolean {
-  if (!seenItems[feedUrl]) {
-    return false;
+// ✅ Get timestamp bài mới nhất đã gửi
+function getLastSentTimestamp(feedUrl: string): Date | null {
+  if (!lastSentTimestamps[feedUrl]) {
+    return null;
   }
-  return seenItems[feedUrl].some((item) => item.link === link);
+  return new Date(lastSentTimestamps[feedUrl]);
 }
 
+// ✅ Parse date từ RSS item
+function getItemDate(item: any): Date | null {
+  // Thử các trường date phổ biến
+  const dateStr =
+    item.isoDate || item.pubDate || item.published || item.updated;
+
+  if (!dateStr) {
+    return null;
+  }
+
+  try {
+    const date = new Date(dateStr);
+    // Check valid date
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  } catch {
+    return null;
+  }
+}
+
+// Strip HTML tags and get snippet
 function getContentSnippet(
   html: string | undefined,
   maxLength: number = 200
@@ -147,8 +193,18 @@ async function sendToDiscord(
       .setFooter({ text: `Nguồn: ${data.feedTitle}` })
       .setTimestamp();
 
+    // Add published date to embed if available
+    if (data.item.pubDate) {
+      const date = new Date(data.item.pubDate);
+      embed.addFields({
+        name: '📅 Xuất bản',
+        value: date.toLocaleString('vi-VN'),
+        inline: true,
+      });
+    }
+
     await textChannel.send({ embeds: [embed] });
-    console.log(`✓ Đã gửi bài "${data.item.title}" đến Discord`);
+    console.log(`✓ Đã gửi: "${data.item.title}"`);
   } catch (error) {
     console.error(
       '❌ Lỗi khi gửi tin nhắn đến Discord:',
@@ -157,7 +213,7 @@ async function sendToDiscord(
   }
 }
 
-// **MỚI**: Fetch và gửi bài đầu tiên khi add feed
+// ✅ Fetch và gửi bài đầu tiên khi add feed
 export async function fetchAndSendInitialPosts(
   client: Client,
   feedUrl: string
@@ -176,9 +232,10 @@ export async function fetchAndSendInitialPosts(
     console.log(`📡 Đang fetch bài từ feed mới: ${feedUrl}`);
     const feed = await parser.parseURL(feedUrl);
 
-    // Lấy 3 bài mới nhất
+    // Lấy N bài mới nhất
     const itemsToSend = feed.items.slice(0, INITIAL_ITEMS_TO_SEND);
     let sentCount = 0;
+    let latestDate: Date | null = null;
 
     for (const item of itemsToSend) {
       const link = item.link;
@@ -186,6 +243,7 @@ export async function fetchAndSendInitialPosts(
 
       if (!link || !title) continue;
 
+      const itemDate = getItemDate(item);
       const contentSnippet = getContentSnippet(
         item.contentSnippet || item.description
       );
@@ -194,25 +252,33 @@ export async function fetchAndSendInitialPosts(
         title,
         link,
         contentSnippet,
+        pubDate: itemDate?.toISOString(),
       };
 
-      // Gửi đến Discord
       await sendToDiscord(client, config.feedChannelId, {
         feedTitle: feed.title || 'RSS Feed',
         feedUrl: feedUrl,
         item: newItem,
       });
 
-      // Thêm vào cache để không gửi lại
-      addToCache(feedUrl, newItem);
+      // Track latest date
+      if (itemDate && (!latestDate || itemDate > latestDate)) {
+        latestDate = itemDate;
+      }
 
       sentCount++;
-
-      // Delay nhỏ giữa các message để tránh rate limit
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
-    // Lưu cache
+    // ✅ Lưu timestamp bài mới nhất
+    if (latestDate) {
+      updateLastSentTimestamp(feedUrl, latestDate.toISOString());
+      console.log(`📌 Cache timestamp: ${latestDate.toISOString()}`);
+    } else {
+      // Nếu không có date, dùng now
+      updateLastSentTimestamp(feedUrl, new Date().toISOString());
+    }
+
     saveCache();
 
     return {
@@ -229,7 +295,7 @@ export async function fetchAndSendInitialPosts(
   }
 }
 
-// Check single RSS feed
+// ✅ Check single RSS feed
 async function checkRSSFeed(
   feedUrl: string,
   client: Client,
@@ -237,28 +303,41 @@ async function checkRSSFeed(
 ): Promise<number> {
   try {
     const feed = await parser.parseURL(feedUrl);
-    let newItemsCount = 0;
+    const lastSentDate = getLastSentTimestamp(feedUrl);
 
-    for (const item of feed.items) {
+    let newItemsCount = 0;
+    let latestDate: Date | null = lastSentDate;
+
+    // Sort items by date (mới nhất trước)
+    const sortedItems = feed.items
+      .map((item) => ({
+        ...item,
+        parsedDate: getItemDate(item),
+      }))
+      .filter((item) => item.parsedDate !== null) // Chỉ lấy items có date
+      .sort((a, b) => b.parsedDate!.getTime() - a.parsedDate!.getTime());
+
+    for (const item of sortedItems) {
       const link = item.link;
       const title = item.title;
+      const itemDate = item.parsedDate!;
 
       if (!link || !title) continue;
 
-      if (!isItemSeen(feedUrl, link)) {
+      // ✅ CHỈ gửi bài mới hơn lastSentDate
+      if (!lastSentDate || itemDate > lastSentDate) {
         newItemsCount++;
 
         const contentSnippet = getContentSnippet(
-          item.contentSnippet || item.description
+          item.contentSnippet || ''
         );
 
         const newItem: RSSItem = {
           title,
           link,
           contentSnippet,
+          pubDate: itemDate.toISOString(),
         };
-
-        addToCache(feedUrl, newItem);
 
         if (config.feedChannelId) {
           await sendToDiscord(client, config.feedChannelId, {
@@ -268,8 +347,22 @@ async function checkRSSFeed(
           });
         }
 
-        console.log(`🆕 Bài mới từ ${feed.title}: ${title}`);
+        // Track latest date
+        if (!latestDate || itemDate > latestDate) {
+          latestDate = itemDate;
+        }
+
+        console.log(
+          `🆕 Bài mới từ ${feed.title}: ${title} (${itemDate.toLocaleString(
+            'vi-VN'
+          )})`
+        );
       }
+    }
+
+    // ✅ Update timestamp sau khi gửi hết bài mới
+    if (latestDate && latestDate !== lastSentDate) {
+      updateLastSentTimestamp(feedUrl, latestDate.toISOString());
     }
 
     return newItemsCount;
@@ -283,9 +376,13 @@ async function checkRSSFeed(
 }
 
 // Check all feeds
-async function checkAllFeeds(client: Client, config: BotConfig): Promise<void> {
+async function checkAllFeeds(client: Client): Promise<void> {
+  const config = loadConfig();
+
   console.log(
-    `\n⏰ [${new Date().toLocaleString('vi-VN')}] Kiểm tra ${
+    `\n⏰ [${new Date().toLocaleTimeString(
+      'vi-VN'
+    )} ${new Date().toLocaleDateString('vi-VN')}] Kiểm tra ${
       config.rssFeeds.length
     } nguồn RSS`
   );
@@ -303,8 +400,14 @@ async function checkAllFeeds(client: Client, config: BotConfig): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
+  // ✅ Save cache sau khi check hết
   saveCache();
-  console.log(`✅ Hoàn thành. Tìm thấy ${totalNewItems} bài mới.`);
+
+  if (totalNewItems > 0) {
+    console.log(`✅ Hoàn thành. Tìm thấy ${totalNewItems} bài mới.`);
+  } else {
+    console.log(`✅ Hoàn thành. Không có bài mới.`);
+  }
 }
 
 // Start RSS watcher
@@ -314,11 +417,10 @@ export function startRSSWatcher(client: Client): void {
 
   console.log('🚀 RSS Watcher đã khởi động');
   console.log(`📋 Số nguồn RSS: ${config.rssFeeds.length}`);
-  console.log(`💾 Lưu tối đa ${MAX_ITEMS_PER_FEED} bài/nguồn`);
   console.log(`⏱️  Kiểm tra mỗi ${config.checkIntervalMinutes} phút`);
 
   // Check immediately
-  checkAllFeeds(client, config);
+  checkAllFeeds(client);
 
   // Schedule cron job
   scheduleRSSCheck(client, config.checkIntervalMinutes);
@@ -330,10 +432,8 @@ function scheduleRSSCheck(client: Client, intervalMinutes: number): void {
     cronJob.stop();
   }
 
-  const config = loadConfig();
-
   cronJob = cron.schedule(`*/${intervalMinutes} * * * *`, async () => {
-    await checkAllFeeds(client, config);
+    await checkAllFeeds(client);
   });
 
   console.log(`⏱️  Đã thiết lập kiểm tra mỗi ${intervalMinutes} phút`);

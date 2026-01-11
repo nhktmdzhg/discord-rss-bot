@@ -3,3 +3,9 @@ config.json
 rss-cache.json
 node_modules/
 dist/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
