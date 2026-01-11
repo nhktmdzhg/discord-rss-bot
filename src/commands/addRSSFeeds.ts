@@ -14,7 +14,6 @@ import {
 export const data = new SlashCommandBuilder()
   .setName('addrssfeeds')
   .setDescription('Thêm nguồn RSS feed mới')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((option) =>
     option.setName('url').setDescription('URL của RSS feed').setRequired(true)
   );

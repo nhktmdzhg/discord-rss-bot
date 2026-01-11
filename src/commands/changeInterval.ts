@@ -8,7 +8,6 @@ import { loadConfig, saveConfig, updateInterval } from '../utils/rssWatcher';
 export const data = new SlashCommandBuilder()
   .setName('changeinterval')
   .setDescription('Thay đổi khoảng thời gian kiểm tra RSS feed')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addIntegerOption((option) =>
     option
       .setName('minutes')

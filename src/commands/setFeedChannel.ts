@@ -10,7 +10,6 @@ import { loadConfig, saveConfig } from '../utils/rssWatcher';
 export const data = new SlashCommandBuilder()
   .setName('setfeedchannel')
   .setDescription('Thiết lập kênh để nhận RSS feed updates')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addChannelOption((option) =>
     option
       .setName('channel')
