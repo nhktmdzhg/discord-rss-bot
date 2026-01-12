@@ -12,7 +12,7 @@ let lastSentTimestamps: CacheData = {};
 
 const CACHE_FILE = './rss-cache.json';
 const CONFIG_FILE = './config.json';
-const INITIAL_ITEMS_TO_SEND = 3;
+const INITIAL_ITEMS_TO_SEND = 1;
 let cronJob: ScheduledTask | null = null;
 
 // Load config
