@@ -4,6 +4,7 @@ import type { ScheduledTask } from 'node-cron';
 import fs from 'fs';
 import { Client, TextChannel, EmbedBuilder, ChannelType } from 'discord.js';
 import { RSSItem, CacheData, BotConfig } from '../types/config';
+import he from 'he';
 
 const parser = new Parser();
 
@@ -185,12 +186,16 @@ async function sendToDiscord(
 
     const textChannel = channel as TextChannel;
 
+    const cleanTitle = data.item.title ? he.decode(data.item.title) : 'Không có tiêu đề';
+    const cleanDesription = data.item.contentSnippet ? he.decode(data.item.contentSnippet) : 'Không có mô tả';
+    const cleanFeedTitle = he.decode(data.feedTitle);
+
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle(data.item.title)
+      .setTitle(cleanTitle)
       .setURL(data.item.link)
-      .setDescription(data.item.contentSnippet || 'Không có mô tả')
-      .setFooter({ text: `Nguồn: ${data.feedTitle}` })
+      .setDescription(cleanDesription)
+      .setFooter({ text: `Nguồn: ${cleanFeedTitle}` })
       .setTimestamp();
 
     // Add published date to embed if available

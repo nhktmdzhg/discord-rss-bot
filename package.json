@@ -15,14 +15,16 @@
     "discord.js": "^14.25.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "he": "^1.2.0",
     "node-cron": "^4.2.1",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
+    "@types/he": "^1.2.3",
     "@types/node": "^25.0.5",
     "@types/node-cron": "^3.0.11",
-    "typescript": "^5.3.3",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0"
